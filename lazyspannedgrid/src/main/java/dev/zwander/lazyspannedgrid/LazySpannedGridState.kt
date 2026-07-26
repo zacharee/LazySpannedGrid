@@ -2,7 +2,6 @@
 
 package dev.zwander.lazyspannedgrid
 
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.MutatePriority
 import androidx.compose.foundation.gestures.ScrollScope
 import androidx.compose.foundation.gestures.ScrollableState
@@ -52,10 +51,12 @@ class LazySpannedGridState(
     private var scrollOffsetPx by mutableFloatStateOf(0f)
     private var maxScrollOffsetPx by mutableFloatStateOf(0f)
 
-    internal var mainAxisLineCount by mutableIntStateOf(1)
-    internal var crossAxisLineCount by mutableIntStateOf(1)
+    var mainAxisLineCount by mutableIntStateOf(1)
+        internal set
+    var crossAxisLineCount by mutableIntStateOf(1)
+        internal set
 
-    internal var lineSizePx: Int by mutableIntStateOf(0)
+    var lineSizePx: Int by mutableIntStateOf(0)
         private set
 
     /**
@@ -78,7 +79,8 @@ class LazySpannedGridState(
      * per the last measure pass. Used by [dev.zwander.lazyspannedgrid.reorderable.ReorderableLazySpannedGridState.chooseDropItem] to hold
      * off confirming another reorder until a previous cascade's animations have settled.
      */
-    internal var hasActiveAnimations: Boolean by mutableStateOf(false)
+    var hasActiveAnimations: Boolean by mutableStateOf(false)
+        internal set
 
     /**
      * The key of the item currently being drag-reordered (see
@@ -93,39 +95,44 @@ class LazySpannedGridState(
      * towards its old slot before catching up to the pointer again. Only this one key's animation
      * is skipped; every other item that shifts to make room for the drag still animates normally.
      */
-    internal var suppressPlacementAnimationKey: Any? by mutableStateOf(null)
+    var suppressPlacementAnimationKey: Any? by mutableStateOf(null)
+        internal set
 
     /**
      * The full (not just currently-visible) item placement from the last measure pass, used by
      * [scrollToItem]/[animateScrollToItem] to resolve an arbitrary, possibly off-screen, item
      * index to its main-axis line.
      */
-    internal var latestPlacementResult: SpannedGridPlacementResult? = null
+    var latestPlacementResult: SpannedGridPlacementResult? = null
+        internal set
 
     /**
      * Set once, from [LazyVerticalSpannedGrid]/[LazyHorizontalSpannedGrid], and used by
      * [measureSpannedGrid] to schedule precomposition/premeasure of the line just beyond the
      * visible range in the scroll direction — see the prefetch bookkeeping fields below.
      */
-    @OptIn(ExperimentalFoundationApi::class)
-    internal var prefetchState: LazyLayoutPrefetchState? = null
+    var prefetchState: LazyLayoutPrefetchState? = null
+        internal set
 
     /** The main-axis line last scheduled for prefetch, or -1 if none. Mirrors DefaultLazyGridPrefetchStrategy's `lineToPrefetch`. */
-    internal var prefetchedLine: Int = -1
+    var prefetchedLine: Int = -1
+        internal set
 
     /** The still-outstanding prefetch handles for [prefetchedLine], cancelled once a different line should be prefetched instead. */
-    @OptIn(ExperimentalFoundationApi::class)
-    internal var prefetchHandles: List<LazyLayoutPrefetchState.PrefetchHandle> = emptyList()
+    var prefetchHandles: List<LazyLayoutPrefetchState.PrefetchHandle> = emptyList()
+        internal set
 
     /**
      * [currentScrollOffsetPx] as of the last measure pass. Used to derive scroll direction for
      * prefetching between passes, and — read *before* [measureSpannedGrid]'s `schedulePrefetch`
      * call updates it — to compute [LazyLayoutItemAnimator.onMeasured]'s `consumedScroll`.
      */
-    internal var lastScrollOffsetPxForPrefetch: Float = 0f
+    var lastScrollOffsetPxForPrefetch: Float = 0f
+        internal set
 
     /** Scratch buffer reused across measure passes instead of allocating a fresh `BooleanArray(itemCount)` every scroll frame — see [measureSpannedGrid]. */
-    internal var visitedIndicesScratch: BooleanArray = BooleanArray(0)
+    var visitedIndicesScratch: BooleanArray = BooleanArray(0)
+        internal set
 
     /** Index of the first main-axis line (row for vertical, column for horizontal) at least partially visible. */
     val firstVisibleLine: Int
@@ -140,7 +147,7 @@ class LazySpannedGridState(
                 (scrollOffsetPx - firstVisibleLine * lineSizePx).roundToInt()
             }
 
-    internal val currentScrollOffsetPx: Float
+    val currentScrollOffsetPx: Float
         get() = scrollOffsetPx
 
     // Modifier.scrollableArea() (see LazySpannedGrid.kt) already inverts+RTL-corrects the raw drag
