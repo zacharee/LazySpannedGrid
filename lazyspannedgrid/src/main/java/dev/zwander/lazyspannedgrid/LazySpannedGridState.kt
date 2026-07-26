@@ -96,7 +96,6 @@ class LazySpannedGridState(
      * is skipped; every other item that shifts to make room for the drag still animates normally.
      */
     var suppressPlacementAnimationKey: Any? by mutableStateOf(null)
-        internal set
 
     /**
      * The full (not just currently-visible) item placement from the last measure pass, used by
