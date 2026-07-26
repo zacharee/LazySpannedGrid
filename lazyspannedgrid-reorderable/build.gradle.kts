@@ -34,6 +34,7 @@ android {
 mavenPublishing {
     pom {
         name = "Lazy Spanned Grid Reorderable"
+        description = "Add-on for LazySpannedGrid to support Compose Reorderable library"
     }
 
     coordinates(artifactId = "lazyspannedgrid-reorderable")

@@ -34,6 +34,7 @@ android {
 mavenPublishing {
     pom {
         name = "Lazy Spanned Grid"
+        description = "Lazy Compose grid implementation that supports item spans on both axes."
     }
 
     coordinates(artifactId = "lazyspannedgrid")
