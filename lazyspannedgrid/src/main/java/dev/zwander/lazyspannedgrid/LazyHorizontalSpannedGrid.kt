@@ -5,6 +5,7 @@ import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
 /**
@@ -16,6 +17,11 @@ import androidx.compose.ui.unit.dp
  * @param rowCount fixed number of rows (the cross-axis span count).
  * @param columnCount reference/minimum number of columns used to compute a fixed cell width. If
  *   the packed items need more columns than this, the grid simply becomes scrollable past it.
+ * @param horizontalItemSpacing gap between columns, along the scrollable axis. Comes out of each
+ *   column's width, and only sits *between* columns — see [LazyVerticalSpannedGrid]'s
+ *   `verticalItemSpacing` for the same convention on its own scrollable axis.
+ * @param verticalItemSpacing gap between rows. Comes out of each row's height, and only sits
+ *   *between* rows, not at the grid's top/bottom edges.
  */
 @Composable
 fun LazyHorizontalSpannedGrid(
@@ -23,6 +29,8 @@ fun LazyHorizontalSpannedGrid(
     columnCount: Int,
     modifier: Modifier = Modifier,
     state: LazySpannedGridState = rememberLazySpannedGridState(),
+    horizontalItemSpacing: Dp = 0.dp,
+    verticalItemSpacing: Dp = 0.dp,
     contentPadding: PaddingValues = PaddingValues(0.dp),
     userScrollEnabled: Boolean = true,
     flingBehavior: FlingBehavior? = null,
@@ -37,6 +45,8 @@ fun LazyHorizontalSpannedGrid(
         orientation = Orientation.Horizontal,
         modifier = modifier,
         state = state,
+        mainAxisSpacing = horizontalItemSpacing,
+        crossAxisSpacing = verticalItemSpacing,
         contentPadding = contentPadding,
         userScrollEnabled = userScrollEnabled,
         flingBehavior = flingBehavior,

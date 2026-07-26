@@ -61,6 +61,26 @@ private fun LazySpannedGridUniformPreview() {
     }
 }
 
+/** Unequal horizontal/vertical gaps plus mixed spans — verifies a spanned item's own footprint absorbs the internal gaps it covers, and gaps never appear at the grid's outer edges. */
+@Preview(widthDp = 320, heightDp = 320)
+@Composable
+private fun LazySpannedGridSpacingPreview() {
+    LazySpannedGridTheme {
+        LazyVerticalSpannedGrid(
+            columnCount = 4,
+            rowCount = 4,
+            horizontalItemSpacing = 4.dp,
+            verticalItemSpacing = 16.dp,
+            modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface),
+        ) {
+            item(span = SpannedGridItemSpan(columnSpan = 2, rowSpan = 2)) {
+                PreviewSpannedGridItem("0", Modifier.fillMaxSize())
+            }
+            items(12) { index -> PreviewSpannedGridItem((index + 1).toString(), Modifier.fillMaxSize()) }
+        }
+    }
+}
+
 data class SpanItem(
     val title: String,
     val span: SpannedGridItemSpan,
@@ -99,6 +119,8 @@ private fun LazySpannedGridMixedSpansPreview() {
             modifier = Modifier.fillMaxSize()
                 .reorderable(reorderableState)
                 .detectReorderAfterLongPress(reorderableState),
+            horizontalItemSpacing = 8.dp,
+            verticalItemSpacing = 8.dp,
         ) {
             items(spans.size, span = { spans[it].span }, key = { spans[it].title }) { index ->
                 ReorderableItem(

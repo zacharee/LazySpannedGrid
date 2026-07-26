@@ -17,6 +17,9 @@ internal class SpannedGridMeasuredItemProvider(
     private val itemProvider: LazySpannedGridItemProvider,
     private val measureScope: LazyLayoutMeasureScope,
     private val animator: LazyLayoutItemAnimator<SpannedGridMeasuredItem>,
+    /** Same value for every item in a given measure pass — see [measureSpannedGrid]. */
+    private val horizontalAxisSpacingPx: Int,
+    private val verticalAxisSpacingPx: Int,
 ) : LazyLayoutMeasuredItemProvider<SpannedGridMeasuredItem>() {
     override fun getAndMeasure(
         index: Int,
@@ -34,6 +37,8 @@ internal class SpannedGridMeasuredItemProvider(
             lane = lane,
             span = span,
             animator = animator,
+            horizontalAxisSpacing = horizontalAxisSpacingPx,
+            verticalAxisSpacing = verticalAxisSpacingPx,
         )
     }
 }

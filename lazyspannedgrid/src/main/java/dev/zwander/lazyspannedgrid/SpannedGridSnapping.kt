@@ -22,9 +22,10 @@ private val MinFlingVelocity = 400.dp
  * is derived from. Not per individual line — flinging pages through the grid a full screen at a time.
  *
  * Unlike the standard `SnapLayoutInfoProvider(LazyGridState, ...)`, this doesn't need to scan
- * [LazySpannedGridLayoutInfo.visibleItemsInfo] for boundaries: every line in this grid is the same
- * fixed size, so page boundaries are just multiples of `lineSizePx * mainAxisLineCount`, and the
- * one before/after the current scroll position can be computed directly.
+ * [LazySpannedGridLayoutInfo.visibleItemsInfo] for boundaries: every line in this grid sits at the
+ * same fixed pitch (`lineSizePx + lineSpacingPx`) apart, so page boundaries are just multiples of
+ * `pitch * mainAxisLineCount`, and the one before/after the current scroll position can be
+ * computed directly.
  *
  * There's no generalized `SnapPosition` support (start/center/end) — unlike a `LazyGrid`, there's
  * no single "item" to position within a page, and aligning a page's start with the viewport start
@@ -38,7 +39,7 @@ fun SnapLayoutInfoProvider(
 ): SnapLayoutInfoProvider =
     object : SnapLayoutInfoProvider {
         private val pageSizePx: Int
-            get() = gridState.lineSizePx * gridState.mainAxisLineCount.coerceAtLeast(1)
+            get() = (gridState.lineSizePx + gridState.lineSpacingPx) * gridState.mainAxisLineCount.coerceAtLeast(1)
 
         override fun calculateApproachOffset(velocity: Float, decayOffset: Float): Float {
             // Let the decay animation cover everything except the last page's worth of distance,
@@ -56,7 +57,8 @@ fun SnapLayoutInfoProvider(
             // same units — moves the scroll offset *forward*, towards later content, matching the
             // usual convention most Compose snap providers assume (named plainly, not
             // "next"/"previous", just because that used to not be true here — see git history).
-            val scrollOffsetPx = gridState.firstVisibleLine * gridState.lineSizePx + gridState.firstVisibleLineScrollOffset
+            val linePitchPx = gridState.lineSizePx + gridState.lineSpacingPx
+            val scrollOffsetPx = gridState.firstVisibleLine * linePitchPx + gridState.firstVisibleLineScrollOffset
             val r = (scrollOffsetPx % pageSizePx).toFloat() // how far into the current page we are
             val backwardDelta = -r // scrollBy delta that aligns to the current page's start
             val forwardDelta = pageSizePx - r // scrollBy delta that aligns to the next page's start

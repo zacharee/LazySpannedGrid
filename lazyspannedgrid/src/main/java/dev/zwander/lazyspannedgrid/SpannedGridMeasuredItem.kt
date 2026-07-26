@@ -31,11 +31,11 @@ internal class SpannedGridMeasuredItem(
     override val lane: Int,
     override val span: Int,
     private val animator: LazyLayoutItemAnimator<SpannedGridMeasuredItem>,
+    override val horizontalAxisSpacing: Int,
+    override val verticalAxisSpacing: Int,
 ) : LazyLayoutMeasuredItem {
     override val horizontalAxisSize: Int = constraints.minWidth
     override val verticalAxisSize: Int = constraints.minHeight
-    override val horizontalAxisSpacing: Int = 0
-    override val verticalAxisSpacing: Int = 0
 
     private var offset: IntOffset = IntOffset.Zero
 

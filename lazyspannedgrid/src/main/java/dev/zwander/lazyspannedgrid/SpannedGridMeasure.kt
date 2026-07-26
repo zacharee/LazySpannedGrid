@@ -12,6 +12,7 @@ import androidx.compose.foundation.lazy.layout.LazyLayoutPrefetchState
 import androidx.compose.ui.graphics.GraphicsContext
 import androidx.compose.ui.layout.MeasureResult
 import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
@@ -107,6 +108,8 @@ internal fun measureSpannedGrid(
     orientation: Orientation,
     crossAxisCount: Int,
     mainAxisLineCount: Int,
+    mainAxisSpacing: Dp,
+    crossAxisSpacing: Dp,
     contentPadding: PaddingValues,
     layoutDirection: LayoutDirection,
     constraints: Constraints,
@@ -137,8 +140,15 @@ internal fun measureSpannedGrid(
         val viewportWidthPx = if (isVertical) viewportCrossAxisPx else viewportMainAxisPx
         val viewportHeightPx = if (isVertical) viewportMainAxisPx else viewportCrossAxisPx
 
-        val crossAxisLineSizePx = availableCrossAxisPx / crossAxisCount
-        val mainAxisLineSizePx = availableMainAxisPx / mainAxisLineCount
+        val mainAxisSpacingPx = mainAxisSpacing.roundToPx()
+        val crossAxisSpacingPx = crossAxisSpacing.roundToPx()
+
+        // Only the (count - 1) gaps *between* lines are subtracted — spacing never appears at the
+        // very start/end of the grid, matching Arrangement.spacedBy's convention on a real LazyGrid.
+        val crossAxisLineSizePx =
+            ((availableCrossAxisPx - crossAxisSpacingPx * (crossAxisCount - 1)) / crossAxisCount).coerceAtLeast(0)
+        val mainAxisLineSizePx =
+            ((availableMainAxisPx - mainAxisSpacingPx * (mainAxisLineCount - 1)) / mainAxisLineCount).coerceAtLeast(0)
 
         val itemCount = itemProvider.itemCount
         val placementResult =
@@ -160,10 +170,15 @@ internal fun measureSpannedGrid(
         state.mainAxisLineCount = mainAxisLineCount
         state.crossAxisLineCount = crossAxisCount
 
+        val mainAxisLinePitchPx = mainAxisLineSizePx + mainAxisSpacingPx
+        val crossAxisLinePitchPx = crossAxisLineSizePx + crossAxisSpacingPx
         val contentMainAxisPx =
-            placementResult.totalRowCount * mainAxisLineSizePx + mainAxisStartPad + mainAxisEndPad
+            placementResult.totalRowCount * mainAxisLineSizePx +
+                (placementResult.totalRowCount - 1).coerceAtLeast(0) * mainAxisSpacingPx +
+                mainAxisStartPad + mainAxisEndPad
         state.applyMeasureResult(
             lineSizePx = mainAxisLineSizePx,
+            lineSpacingPx = mainAxisSpacingPx,
             viewportMainAxisPx = viewportMainAxisPx,
             contentMainAxisPx = contentMainAxisPx,
         )
@@ -174,16 +189,16 @@ internal fun measureSpannedGrid(
         val scrollOffsetPx = state.currentScrollOffsetPx.toInt()
 
         val firstVisibleLine =
-            if (mainAxisLineSizePx <= 0) {
+            if (mainAxisLinePitchPx <= 0) {
                 0
             } else {
-                (scrollOffsetPx / mainAxisLineSizePx).coerceIn(0, placementResult.totalRowCount - 1)
+                (scrollOffsetPx / mainAxisLinePitchPx).coerceIn(0, placementResult.totalRowCount - 1)
             }
         val lastVisibleLine =
-            if (mainAxisLineSizePx <= 0) {
+            if (mainAxisLinePitchPx <= 0) {
                 placementResult.totalRowCount - 1
             } else {
-                ((scrollOffsetPx + availableMainAxisPx) / mainAxisLineSizePx)
+                ((scrollOffsetPx + availableMainAxisPx) / mainAxisLinePitchPx)
                     .coerceIn(firstVisibleLine, placementResult.totalRowCount - 1)
             }
 
@@ -238,10 +253,26 @@ internal fun measureSpannedGrid(
             lastVisibleLine = lastVisibleLine,
             mainAxisLineSizePx = mainAxisLineSizePx,
             crossAxisLineSizePx = crossAxisLineSizePx,
+            mainAxisSpacingPx = mainAxisSpacingPx,
+            crossAxisSpacingPx = crossAxisSpacingPx,
             isVertical = isVertical,
         )
 
-        val measuredItemProvider = SpannedGridMeasuredItemProvider(itemProvider, measureScope, state.itemAnimator)
+        // The interface's horizontal/vertical spacing fields (as opposed to main/cross axis) are
+        // only ever consulted by the item animator along whichever axis matches isVertical (see
+        // LazyLayoutMeasuredItem.mainAxisSizeWithSpacings) — but filling in both correctly, not
+        // just the one the animator currently reads, keeps this honest against that interface's
+        // own contract if a future androidx version starts using the other axis too.
+        val horizontalAxisSpacingPx = if (isVertical) crossAxisSpacingPx else mainAxisSpacingPx
+        val verticalAxisSpacingPx = if (isVertical) mainAxisSpacingPx else crossAxisSpacingPx
+        val measuredItemProvider =
+            SpannedGridMeasuredItemProvider(
+                itemProvider = itemProvider,
+                measureScope = measureScope,
+                animator = state.itemAnimator,
+                horizontalAxisSpacingPx = horizontalAxisSpacingPx,
+                verticalAxisSpacingPx = verticalAxisSpacingPx,
+            )
 
         val positionedItems = ArrayList<SpannedGridMeasuredItem>(naturalVisibleIndices.size)
         val visibleItemsInfo = ArrayList<LazySpannedGridItemInfo>(naturalVisibleIndices.size)
@@ -261,11 +292,14 @@ internal fun measureSpannedGrid(
             val mainAxisSpan = placement.rowSpan
             val crossAxisSpan = placement.columnSpan
 
-            val itemMainAxisSizePx = mainAxisLineSizePx * mainAxisSpan
-            val itemCrossAxisSizePx = crossAxisLineSizePx * crossAxisSpan
+            // A span merges (mainAxisSpan - 1)/(crossAxisSpan - 1) internal gaps into the item's
+            // own footprint, the same way a merged cell in a spreadsheet swallows the gridlines
+            // between the cells it spans.
+            val itemMainAxisSizePx = mainAxisLineSizePx * mainAxisSpan + mainAxisSpacingPx * (mainAxisSpan - 1)
+            val itemCrossAxisSizePx = crossAxisLineSizePx * crossAxisSpan + crossAxisSpacingPx * (crossAxisSpan - 1)
 
-            val mainAxisContentPos = mainAxisStartPad + mainAxisIndex * mainAxisLineSizePx
-            val crossAxisPos = crossAxisStartPad + crossAxisIndex * crossAxisLineSizePx
+            val mainAxisContentPos = mainAxisStartPad + mainAxisIndex * mainAxisLinePitchPx
+            val crossAxisPos = crossAxisStartPad + crossAxisIndex * crossAxisLinePitchPx
 
             val contentX = if (isVertical) crossAxisPos else mainAxisContentPos
             val contentY = if (isVertical) mainAxisContentPos else crossAxisPos
@@ -385,6 +419,8 @@ private fun schedulePrefetch(
     lastVisibleLine: Int,
     mainAxisLineSizePx: Int,
     crossAxisLineSizePx: Int,
+    mainAxisSpacingPx: Int,
+    crossAxisSpacingPx: Int,
     isVertical: Boolean,
 ) {
     val prefetchState = state.prefetchState ?: return
@@ -420,8 +456,8 @@ private fun schedulePrefetch(
     for (index in placementResult.rowToItemIndices[targetLine]) {
         if (index in renderIndices) continue // already visible/composed this pass
         val placement = placementResult.placements[index]
-        val itemMainAxisSizePx = mainAxisLineSizePx * placement.rowSpan
-        val itemCrossAxisSizePx = crossAxisLineSizePx * placement.columnSpan
+        val itemMainAxisSizePx = mainAxisLineSizePx * placement.rowSpan + mainAxisSpacingPx * (placement.rowSpan - 1)
+        val itemCrossAxisSizePx = crossAxisLineSizePx * placement.columnSpan + crossAxisSpacingPx * (placement.columnSpan - 1)
         val widthPx = if (isVertical) itemCrossAxisSizePx else itemMainAxisSizePx
         val heightPx = if (isVertical) itemMainAxisSizePx else itemCrossAxisSizePx
         handles += prefetchState.schedulePrecompositionAndPremeasure(index, Constraints.fixed(widthPx, heightPx))

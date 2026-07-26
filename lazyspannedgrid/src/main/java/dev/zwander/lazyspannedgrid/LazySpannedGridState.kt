@@ -32,8 +32,9 @@ fun rememberLazySpannedGridState(
  * logic (see [measureSpannedGrid]).
  *
  * Scroll position is stored internally in pixels; [firstVisibleLine] and [firstVisibleLineScrollOffset]
- * are derived from it using the line size discovered during the last measure pass (mirroring how
- * `LazyGridState` derives its item-based position from pixel offsets known only after measuring).
+ * are derived from it using the line size/spacing discovered during the last measure pass
+ * (mirroring how `LazyGridState` derives its item-based position from pixel offsets known only
+ * after measuring).
  *
  * [coroutineScope] drives the [itemAnimator]'s placement/fade-in/fade-out animations, started by
  * [LazySpannedGridItemScope.animateItem] (see [measureSpannedGrid]) — it's cancelled, and any
@@ -57,6 +58,17 @@ class LazySpannedGridState(
         internal set
 
     var lineSizePx: Int by mutableIntStateOf(0)
+        private set
+
+    /**
+     * The gap, in pixels, between consecutive main-axis lines — i.e. `verticalItemSpacing` for
+     * [LazyVerticalSpannedGrid], `horizontalItemSpacing` for [LazyHorizontalSpannedGrid]. Kept
+     * separate from [lineSizePx] (which stays the cell's own rendered size, no spacing) so
+     * [firstVisibleLine]/[firstVisibleLineScrollOffset]/[targetOffsetPx] can convert between a
+     * pixel scroll offset and a line index using the actual pitch between line starts —
+     * `lineSizePx + lineSpacingPx` — rather than assuming lines sit flush against each other.
+     */
+    var lineSpacingPx: Int by mutableIntStateOf(0)
         private set
 
     /**
@@ -143,17 +155,21 @@ class LazySpannedGridState(
     var visitedIndicesScratch: BooleanArray = BooleanArray(0)
         internal set
 
+    /** Distance, in pixels, between the start of one main-axis line and the start of the next. */
+    private val linePitchPx: Int
+        get() = lineSizePx + lineSpacingPx
+
     /** Index of the first main-axis line (row for vertical, column for horizontal) at least partially visible. */
     val firstVisibleLine: Int
-        get() = if (lineSizePx <= 0) 0 else (scrollOffsetPx / lineSizePx).toInt()
+        get() = if (linePitchPx <= 0) 0 else (scrollOffsetPx / linePitchPx).toInt()
 
     /** Scroll offset, in pixels, of [firstVisibleLine] relative to the start of the viewport. */
     val firstVisibleLineScrollOffset: Int
         get() =
-            if (lineSizePx <= 0) {
+            if (linePitchPx <= 0) {
                 0
             } else {
-                (scrollOffsetPx - firstVisibleLine * lineSizePx).roundToInt()
+                (scrollOffsetPx - firstVisibleLine * linePitchPx).roundToInt()
             }
 
     val currentScrollOffsetPx: Float
@@ -176,12 +192,19 @@ class LazySpannedGridState(
      * Called by [measureSpannedGrid] after every measure pass to reconcile the pixel scroll
      * position with the newly-known line/content/viewport sizes.
      */
-    internal fun applyMeasureResult(lineSizePx: Int, viewportMainAxisPx: Int, contentMainAxisPx: Int) {
-        if (pendingInitialOffset && lineSizePx > 0) {
-            scrollOffsetPx = (initialFirstVisibleLine * lineSizePx + initialScrollOffset).toFloat()
+    internal fun applyMeasureResult(
+        lineSizePx: Int,
+        lineSpacingPx: Int,
+        viewportMainAxisPx: Int,
+        contentMainAxisPx: Int,
+    ) {
+        val linePitchPx = lineSizePx + lineSpacingPx
+        if (pendingInitialOffset && linePitchPx > 0) {
+            scrollOffsetPx = (initialFirstVisibleLine * linePitchPx + initialScrollOffset).toFloat()
             pendingInitialOffset = false
         }
         this.lineSizePx = lineSizePx
+        this.lineSpacingPx = lineSpacingPx
         maxScrollOffsetPx = (contentMainAxisPx - viewportMainAxisPx).coerceAtLeast(0).toFloat()
         scrollOffsetPx = scrollOffsetPx.coerceIn(0f, maxScrollOffsetPx)
     }
@@ -223,7 +246,7 @@ class LazySpannedGridState(
         latestPlacementResult?.placements?.getOrNull(index)?.row
 
     private fun targetOffsetPx(line: Int, scrollOffset: Int): Float =
-        (line.coerceAtLeast(0) * lineSizePx + scrollOffset).toFloat().coerceIn(0f, maxScrollOffsetPx)
+        (line.coerceAtLeast(0) * linePitchPx + scrollOffset).toFloat().coerceIn(0f, maxScrollOffsetPx)
 
     override suspend fun scroll(
         scrollPriority: MutatePriority,

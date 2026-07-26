@@ -15,6 +15,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalGraphicsContext
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
 @Composable
@@ -24,6 +25,8 @@ fun LazySpannedGrid(
     orientation: Orientation,
     modifier: Modifier = Modifier,
     state: LazySpannedGridState = rememberLazySpannedGridState(),
+    mainAxisSpacing: Dp = 0.dp,
+    crossAxisSpacing: Dp = 0.dp,
     contentPadding: PaddingValues = PaddingValues(0.dp),
     userScrollEnabled: Boolean = true,
     flingBehavior: FlingBehavior? = null,
@@ -37,7 +40,16 @@ fun LazySpannedGrid(
     val graphicsContext = LocalGraphicsContext.current
 
     val measurePolicy =
-        remember(mainAxisCount, crossAxisCount, contentPadding, layoutDirection, state, graphicsContext) {
+        remember(
+            mainAxisCount,
+            crossAxisCount,
+            mainAxisSpacing,
+            crossAxisSpacing,
+            contentPadding,
+            layoutDirection,
+            state,
+            graphicsContext,
+        ) {
             LazyLayoutMeasurePolicy { constraints ->
                 measureSpannedGrid(
                     measureScope = this,
@@ -46,6 +58,8 @@ fun LazySpannedGrid(
                     orientation = orientation,
                     crossAxisCount = crossAxisCount,
                     mainAxisLineCount = mainAxisCount,
+                    mainAxisSpacing = mainAxisSpacing,
+                    crossAxisSpacing = crossAxisSpacing,
                     contentPadding = contentPadding,
                     layoutDirection = layoutDirection,
                     constraints = constraints,
