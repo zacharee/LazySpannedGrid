@@ -356,6 +356,7 @@ internal fun measureSpannedGrid(
                 cellSize = IntSize(cellWidthPx, cellHeightPx),
                 orientation = orientation,
             )
+        state.measurePassCount++
 
         layout(viewportWidthPx, viewportHeightPx) {
             positionedItems.fastForEach { it.place(this, isLookingAhead = false) }

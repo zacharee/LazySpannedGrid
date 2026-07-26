@@ -241,9 +241,30 @@ class ReorderableLazySpannedGridState(
     // later in the same drag — making it impossible to drag an item back to cancel a reorder.
     private var pendingTargetKey: Any? = null
 
+    // org.burnoutcrew.reorderable calls onDrag — and therefore chooseDropItem — synchronously
+    // once per raw pointer-move event, with no frame-clock gating (see Reorderable.kt's
+    // detectDrag). gridState.hasActiveAnimations, on the other hand, only updates once per actual
+    // remeasure pass, which *is* tied to the frame clock. On a fast drag — or whenever recomposition
+    // + remeasure can't keep up with the pointer, which the Android Studio Interactive Preview is
+    // especially prone to — several onDrag calls can land back-to-back before the first move's
+    // onMove -> recompose -> remeasure has had a chance to update gridState. Without this latch, a
+    // second move then confirms and retargets a cascade gridState hasn't even registered yet,
+    // reopening the exact "jiggling" hasActiveAnimations below was meant to prevent — just through
+    // the pointer-rate door instead of the overlapping-candidate one.
+    //
+    // This latches on gridState.measurePassCount rather than gridState.hasActiveAnimations itself:
+    // a confirmed move isn't guaranteed to make any *other* item animate (e.g. swapping the dragged
+    // item with an adjacent same-footprint neighbor can leave every other item's slot untouched),
+    // so hasActiveAnimations can legitimately never flip true for a given move. Waiting on that
+    // would latch forever and permanently block every move after the first. Waiting for one fresh
+    // remeasure instead is guaranteed to happen (it's what onMove's data change itself triggers),
+    // and by the time it has, hasActiveAnimations reflects this move's real outcome either way.
+    private var pendingMoveMeasurePassCount = -1
+
     /** Called on every drag start (see [rememberReorderableLazySpannedGridState]) so a new drag doesn't inherit debounce state left over from a previous one. */
     internal fun resetDropTargetDebounce() {
         pendingTargetKey = null
+        pendingMoveMeasurePassCount = -1
     }
 
     override fun chooseDropItem(
@@ -254,6 +275,12 @@ class ReorderableLazySpannedGridState(
     ): LazySpannedGridItemInfo? {
         if (draggedItemInfo == null) {
             return if (draggingItemIndex != null) items.lastOrNull() else null
+        }
+        if (pendingMoveMeasurePassCount >= 0) {
+            if (gridState.measurePassCount == pendingMoveMeasurePassCount) {
+                return null
+            }
+            pendingMoveMeasurePassCount = -1
         }
         // A confirmed move triggers a real repack, which can cascade and give several items a
         // fresh animateItem() placement animation (see the NOTE above resetDropTargetDebounce).
@@ -274,6 +301,7 @@ class ReorderableLazySpannedGridState(
         }
         if (candidate.itemKey == pendingTargetKey) {
             pendingTargetKey = null
+            pendingMoveMeasurePassCount = gridState.measurePassCount
             return candidate
         }
         pendingTargetKey = candidate.itemKey

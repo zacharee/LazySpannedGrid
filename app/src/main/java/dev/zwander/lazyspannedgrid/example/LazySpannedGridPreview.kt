@@ -101,15 +101,19 @@ private fun LazySpannedGridMixedSpansPreview() {
                 .detectReorderAfterLongPress(reorderableState),
         ) {
             items(spans.size, span = { spans[it].span }, key = { spans[it].title }) { index ->
-                ReorderableItem(reorderableState, key = spans[index].title, orientationLocked = false) { isDragging ->
+                ReorderableItem(
+                    state = reorderableState,
+                    key = spans[index].title,
+                    orientationLocked = false,
+                    modifier = Modifier.animateItem(),
+                ) { isDragging ->
                     val elevation by animateDpAsState(if (isDragging) 16.dp else 0.dp)
                     val scale by animateFloatAsState(if (isDragging) 1.08f else 1f)
                     PreviewSpannedGridItem(
                         spans[index].title,
                         Modifier.fillMaxSize()
                             .scale(scale)
-                            .shadow(elevation)
-                            .animateItem(),
+                            .shadow(elevation),
                     )
                 }
             }

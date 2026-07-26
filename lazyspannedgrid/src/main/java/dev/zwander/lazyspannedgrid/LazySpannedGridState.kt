@@ -83,6 +83,16 @@ class LazySpannedGridState(
         internal set
 
     /**
+     * Incremented once per completed measure pass. Plain, non-observable counter — nothing needs
+     * to react to it changing, it only needs to be polled synchronously (see
+     * [dev.zwander.lazyspannedgrid.reorderable.ReorderableLazySpannedGridState.chooseDropItem]'s
+     * pending-move latch), so unlike [hasActiveAnimations]/[suppressPlacementAnimationKey] it
+     * doesn't need to be a Compose state to do its job.
+     */
+    var measurePassCount: Int = 0
+        internal set
+
+    /**
      * The key of the item currently being drag-reordered (see
      * [dev.zwander.lazyspannedgrid.reorderable.ReorderableLazySpannedGridState]/`rememberReorderableLazySpannedGridState`'s
      * `draggingItemKey` observer), or null when nothing is being dragged. [measureSpannedGrid]
