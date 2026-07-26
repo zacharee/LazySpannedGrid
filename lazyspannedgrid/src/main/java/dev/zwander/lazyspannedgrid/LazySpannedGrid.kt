@@ -63,7 +63,25 @@ fun LazySpannedGrid(
                 .scrollableArea(
                     state = state,
                     orientation = orientation,
-                    enabled = userScrollEnabled,
+                    // While a reorder drag is active (see suppressPlacementAnimationKey's own
+                    // KDoc), disable scrollableArea's *own* native touch-drag-then-fling gesture
+                    // recognition entirely, rather than leaving it enabled alongside
+                    // `.reorderable()`. scrollableArea's ScrollableNode and `.reorderable()`'s own
+                    // drag() tracking are two independent pointerInput consumers on the same
+                    // modifier chain — nothing stops scrollableArea's gesture detector from also
+                    // reacting to the same post-long-press movement, and Compose's Main pass
+                    // dispatches to it *before* `.reorderable()` (it's later/innermost in the
+                    // chain), so it can consume a move event `.reorderable()`'s own drag() then
+                    // sees as already-consumed and treats as an externally-cancelled gesture.
+                    // Reported as "the whole grid jumps around mid-drag" specifically once a
+                    // page-snapping FlingBehavior was in use — with the default decay fling any
+                    // stray scrollableArea-side reaction is a barely-noticeable nudge, but a snap
+                    // fling animates a full, very visible jump to the nearest page boundary,
+                    // making an otherwise-rare race obvious. This only disables *gesture
+                    // recognition*: our own reorder-driven autoscroll calls gridState.scrollBy()
+                    // programmatically, which works regardless of `enabled` (that flag only gates
+                    // the touch-drag detector, not the underlying ScrollableState API).
+                    enabled = userScrollEnabled && state.suppressPlacementAnimationKey == null,
                     reverseScrolling = false,
                     flingBehavior = flingBehavior,
                 ),

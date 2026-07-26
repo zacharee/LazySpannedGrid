@@ -22,6 +22,7 @@ import org.burnoutcrew.reorderable.DragCancelledAnimation
 import org.burnoutcrew.reorderable.ItemPosition
 import org.burnoutcrew.reorderable.ReorderableState
 import org.burnoutcrew.reorderable.SpringDragCancelledAnimation
+import kotlin.math.abs
 
 @Composable
 fun rememberReorderableLazySpannedGridState(
@@ -66,7 +67,9 @@ fun rememberReorderableLazySpannedGridState(
     // offset math and visibly lurches the dragged item back towards its old slot on every repack.
     LaunchedEffect(state) {
         snapshotFlow { state.draggingItemKey }
-            .collect { key -> gridState.suppressPlacementAnimationKey = key }
+            .collect { key ->
+                gridState.suppressPlacementAnimationKey = key
+            }
     }
 
     // Autoscroll while the dragged item is within `edgeScrollMargin` of either end of the
@@ -87,8 +90,22 @@ fun rememberReorderableLazySpannedGridState(
             val itemStart = (if (isVertical) info.offset.y else info.offset.x) +
                 (if (isVertical) state.draggingItemTop else state.draggingItemLeft)
             val itemEnd = itemStart + (if (isVertical) info.size.height else info.size.width)
-            val intoStartMargin = edgeScrollMarginPx - itemStart
-            val intoEndMargin = itemEnd - (viewportSize - edgeScrollMarginPx)
+            val itemExtent = itemEnd - itemStart
+            // Once an item's own main-axis extent reaches the "safe zone" between the two margins,
+            // *every* position it can occupy has it into one margin or the other — there's no
+            // placement where intoStartMargin and intoEndMargin are both <= 0. The margin-based
+            // heuristic below then has no real "not near an edge" state to settle into: it always
+            // picks a dominant direction and scrolls, continuously, at up to maxScrollPx per frame,
+            // regardless of the actual drag position — observed as a full-width+multi-row item
+            // triggering non-stop, finger-position-independent autoscroll for the entire drag (see
+            // the "scrollableArea/reorder race" investigation's follow-up finding, 2026-07-26).
+            // For such an oversized item, fall back to the plain, non-preemptive semantics instead:
+            // only autoscroll once the item has actually crossed a true viewport edge (itemStart < 0
+            // or itemEnd > viewportSize), which — unlike the margin — an oversized item is *not*
+            // guaranteed to satisfy merely by existing.
+            val isOversized = itemExtent >= viewportSize - 2 * edgeScrollMarginPx
+            val intoStartMargin = if (isOversized) -itemStart else edgeScrollMarginPx - itemStart
+            val intoEndMargin = if (isOversized) itemEnd - viewportSize else itemEnd - (viewportSize - edgeScrollMarginPx)
             // For an item whose own main-axis extent is at least comparable to the viewport (e.g.
             // a widget that's both full-width *and* multi-row), intoStartMargin and intoEndMargin
             // can both be positive at once — the item is "into" both margins simply by being that
@@ -212,9 +229,16 @@ class ReorderableLazySpannedGridState(
         y: Int,
         selected: LazySpannedGridItemInfo,
     ): List<LazySpannedGridItemInfo> {
+        // Stashed for chooseDropItem's swap-back hysteresis below — (x, y) here is
+        // ReorderableState's own accumulated raw pointer delta since drag start (fixed
+        // `selected` + this delta), unlike chooseDropItem's own curX/curY, which is the *dragged
+        // item's current rendered position* and therefore itself moves when a repack cascades,
+        // making it useless as a "how far has the pointer actually moved" signal.
+        lastFindTargetsX = x
+        lastFindTargetsY = y
         val centerX = x + (selected.left + selected.right) / 2
         val centerY = y + (selected.top + selected.bottom) / 2
-        return visibleItemsInfo.filter { item ->
+        val result = visibleItemsInfo.filter { item ->
             item.itemIndex != draggingItemIndex &&
                 centerX in item.left..item.right &&
                 centerY in item.top..item.bottom &&
@@ -223,6 +247,7 @@ class ReorderableLazySpannedGridState(
                     ItemPosition(selected.itemIndex, selected.itemKey),
                 ) != false
         }
+        return result
     }
 
     // findTargets now returns at most one genuine candidate (see above), so this debounces that
@@ -232,14 +257,30 @@ class ReorderableLazySpannedGridState(
     // This guards against flicker right at a cell boundary, where the dragged item's center can
     // toggle between two adjacent cells on either side of a single pixel.
     //
-    // Deliberately no "already-acted-on" blacklist beyond that: findTargets already excludes the
-    // dragged item's own *current* slot by index, so once a move commits there's nothing left to
-    // suppress — re-hovering a target you already swapped with (e.g. dragging back to undo) is a
-    // perfectly normal, different candidate at that point, not a repeat of the same one. An
-    // earlier version tracked a permanent "committedTargetKey" here to be extra sure a settled
-    // target wouldn't immediately re-trigger, but that also blocked ever re-selecting it again
-    // later in the same drag — making it impossible to drag an item back to cancel a reorder.
+    // No permanent "already-acted-on" blacklist beyond the movement-gated one below: findTargets
+    // already excludes the dragged item's own *current* slot by index, so once a move commits
+    // there's nothing left to suppress on its own — re-hovering a target you already swapped with
+    // (e.g. dragging back to undo) is a perfectly normal, different candidate at that point, not a
+    // repeat of the same one. An earlier version tracked a permanent "committedTargetKey" here to
+    // be extra sure a settled target wouldn't immediately re-trigger, but that also blocked ever
+    // re-selecting it again later in the same drag — making it impossible to drag an item back to
+    // cancel a reorder.
     private var pendingTargetKey: Any? = null
+
+    // The last x/y stashed by findTargets (see its own comment) — a stable, pointer-delta-based
+    // position, unlike chooseDropItem's own curX/curY.
+    private var lastFindTargetsX = 0
+    private var lastFindTargetsY = 0
+
+    // The pointer position of the *last confirmed swap*, of any partner — see the hysteresis check
+    // in chooseDropItem below, which this backs. Deliberately not keyed to "the same partner as
+    // last time": a 2-cycle (swap with A, then B, then A, then B, ...) never repeats the immediately
+    // previous partner, so gating only on an exact-key repeat missed it entirely — every partner in
+    // the cycle looked like a fresh, unrelated candidate. Gating on *any* recent swap, regardless of
+    // key, catches cycles of any length at the cost of the same brief pause on a genuinely new,
+    // adjacent swap right after a real one — imperceptible next to a runaway back-and-forth.
+    private var lastSwapX: Int? = null
+    private var lastSwapY = 0
 
     // org.burnoutcrew.reorderable calls onDrag — and therefore chooseDropItem — synchronously
     // once per raw pointer-move event, with no frame-clock gating (see Reorderable.kt's
@@ -265,6 +306,7 @@ class ReorderableLazySpannedGridState(
     internal fun resetDropTargetDebounce() {
         pendingTargetKey = null
         pendingMoveMeasurePassCount = -1
+        lastSwapX = null
     }
 
     override fun chooseDropItem(
@@ -300,8 +342,35 @@ class ReorderableLazySpannedGridState(
             return null
         }
         if (candidate.itemKey == pendingTargetKey) {
+            // With heterogeneous spans, this grid's bin-packing placement is order-dependent, so
+            // confirming a swap can cascade well beyond the two items involved — which can shift
+            // *other* items' cell boundaries enough that the dragged item's (fixed-anchor, see
+            // findTargets) test point ends up back inside a *recently* swapped-with item, even
+            // though the pointer hasn't moved further. Left unchecked, that repack side effect
+            // re-confirms swaps back and forth indefinitely — observed as a 2-cycle, alternating
+            // between the same two neighbors for seconds at a time with the finger nearly
+            // stationary (2026-07-26 investigation). A 2-cycle never repeats the *immediately*
+            // previous partner (it alternates A, B, A, B, ...), so gating only on an exact-key
+            // repeat missed it; requiring genuine further pointer movement since the last swap,
+            // regardless of which partner it was with, catches cycles of any length. lastSwapX
+            // null means no swap has happened yet this drag, so the very first one is never gated.
+            val lastX = lastSwapX
+            if (lastX != null) {
+                val isVertical = gridState.layoutInfo.orientation == Orientation.Vertical
+                val movedSinceLastSwap = if (isVertical) {
+                    abs(lastFindTargetsY - lastSwapY)
+                } else {
+                    abs(lastFindTargetsX - lastX)
+                }
+                val threshold = gridState.lineSizePx / 2
+                if (movedSinceLastSwap < threshold) {
+                    return null
+                }
+            }
             pendingTargetKey = null
             pendingMoveMeasurePassCount = gridState.measurePassCount
+            lastSwapX = lastFindTargetsX
+            lastSwapY = lastFindTargetsY
             return candidate
         }
         pendingTargetKey = candidate.itemKey
