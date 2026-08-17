@@ -119,6 +119,8 @@ class LazySpannedGridState(
      */
     var suppressPlacementAnimationKey: Any? by mutableStateOf(null)
 
+    var skipItemPlacementAnimation = false
+
     /**
      * The full (not just currently-visible) item placement from the last measure pass, used by
      * [scrollToItem]/[animateScrollToItem] to resolve an arbitrary, possibly off-screen, item
@@ -218,7 +220,12 @@ class LazySpannedGridState(
 
     /** Animates the scroll position so that [line] becomes the first visible line. */
     suspend fun animateScrollToLine(line: Int, scrollOffset: Int = 0) {
-        animateScrollBy(targetOffsetPx(line, scrollOffset) - scrollOffsetPx)
+        try {
+            skipItemPlacementAnimation = true
+            animateScrollBy(targetOffsetPx(line, scrollOffset) - scrollOffsetPx)
+        } finally {
+            skipItemPlacementAnimation = false
+        }
     }
 
     /**

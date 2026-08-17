@@ -362,6 +362,7 @@ internal fun measureSpannedGrid(
             layoutMaxOffset = viewportMainAxisPx,
             coroutineScope = state.coroutineScope,
             graphicsContext = graphicsContext,
+            shouldRunItemAnimation = !state.skipItemPlacementAnimation,
         )
 
         // Excludes the currently-dragged key (if any): its own placement animation is never
