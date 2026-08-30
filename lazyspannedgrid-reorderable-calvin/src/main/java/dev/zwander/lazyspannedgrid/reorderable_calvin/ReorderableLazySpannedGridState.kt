@@ -2,7 +2,12 @@
 
 package dev.zwander.lazyspannedgrid.reorderable_calvin
 
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.AnimationSpec
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.VectorConverter
+import androidx.compose.animation.core.VisibilityThreshold
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.ScrollableState
 import androidx.compose.foundation.gestures.animateScrollBy
@@ -36,6 +41,7 @@ import dev.zwander.lazyspannedgrid.rememberLazySpannedGridState
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.launch
 import sh.calvin.reorderable.AbsolutePixelPadding
 import sh.calvin.reorderable.DragGestureDetector
 import sh.calvin.reorderable.LazyCollectionItemInfo
@@ -81,16 +87,15 @@ import sh.calvin.reorderable.rememberScroller
 //     original signal (raw accumulated pointer delta since drag start) even more closely than a
 //     draggingItemOffset-based approach would have.
 //   - the post-drag "spring back from wherever it was released" visual (previousDraggingItemKey/
-//     previousDraggingItemOffset) has no substitute and is simply not reproduced here — a dragged
-//     item falls back to its ordinary animateItemModifier() placement spring the instant the drag
-//     ends, rather than animating from its exact release position.
+//     previousDraggingItemOffset) is reproduced independently too — ReorderableLazySpannedGridState
+//     keeps its own previousDraggingItemKey/previousDraggingItemOffset (an Animatable snapshotted
+//     from draggingItemOffsetOrZero at release time and animated back to zero), rather than reading
+//     the base class's uncallable copies.
 //
-// The parallel pointer observer is a best-effort design that has NOT been verified on-device or in
-// Interactive Preview — two independent gesture detectors sharing the same pointer input area is a
-// generally-supported Compose pattern (this one deliberately never calls PointerInputChange.consume(),
-// so it can't itself block the real draggableHandle detector from working), but confirm the actual
-// drag-follow visual still behaves correctly once this is exercised for real, via instrumentation
-// against real touch input, not by inspection alone.
+// All of the above has been verified on-device (2026-08-29), via the same real-touch-input
+// instrumentation used to find and fix the bugs that inspection alone missed — see project memory
+// "calvin-reorderable-internal-api-compiler-crash" for the specific findings and how each was
+// diagnosed. Re-verify the same way before trusting further changes to this file.
 // ---------------------------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------------------------
@@ -315,7 +320,6 @@ private class DropTargetSelector(
     // updated in parallel with (not instead of) the base class's own lifecycle, driven from the
     // public onDragStarted/onDragStopped callback params.
     fun beginTrackingDrag(item: LazySpannedGridItemInfo) {
-        android.util.Log.d("REORDER_DEBUG", "beginTrackingDrag item=${item.key} passedOffset=${item.offset} liveOffset=${gridState.layoutInfo.visibleItemsInfo.firstOrNull { it.key == item.key }?.offset}")
         draggingItemInfo = item
         draggingItemInitialOffset = item.offset
         rawDragDelta = Offset.Zero
@@ -324,7 +328,6 @@ private class DropTargetSelector(
     }
 
     fun endTrackingDrag() {
-        android.util.Log.d("REORDER_DEBUG", "endTrackingDrag")
         draggingItemInfo = null
     }
 
@@ -366,7 +369,6 @@ private class DropTargetSelector(
         // overlap almost anywhere nearby regardless of how far its actual center is).
         if (!itemRect.contains(draggingItemRect.center)) return false
 
-        android.util.Log.d("REORDER_DEBUG", "shouldItemMove CONFIRMED candidate=${candidate.key} candidateOffset=${candidate.offset}")
         lastMoveTargetIndex = candidate.index
         return true
     }
@@ -387,7 +389,7 @@ private class DropTargetSelector(
  */
 class ReorderableLazySpannedGridState internal constructor(
     val gridState: LazySpannedGridState,
-    scope: CoroutineScope,
+    private val scope: CoroutineScope,
     onMoveState: State<suspend CoroutineScope.(LazySpannedGridItemInfo, LazySpannedGridItemInfo) -> Unit>,
     canDragOverState: State<((draggedOver: LazySpannedGridItemInfo, dragging: LazySpannedGridItemInfo) -> Boolean)?>,
     scrollThreshold: Float,
@@ -421,7 +423,43 @@ class ReorderableLazySpannedGridState internal constructor(
 
     internal fun beginTrackingDrag(item: LazySpannedGridItemInfo) = dropTargetSelector.beginTrackingDrag(item)
 
-    internal fun endTrackingDrag() = dropTargetSelector.endTrackingDrag()
+    /**
+     * Substitute for the base class's own (uncallable, see the class KDoc)
+     * `previousDraggingItemKey`/`previousDraggingItemOffset` — without it, the instant a drag ends
+     * the dragged item's [graphicsLayer][androidx.compose.ui.graphics.graphicsLayer] translation
+     * (see [draggingItemOffsetOrZero]) is simply removed and replaced by [ReorderableLazySpannedGridItem]'s
+     * `animateItemModifier`, which has no idea a drag was ever happening and so has nothing to
+     * animate *from* — confirmed on-device (2026-08-29): releasing anywhere off-slot snapped the
+     * item straight to its final position instead of visibly settling into place. Snapshotting the
+     * exact release offset here and animating it back to zero mirrors the base class's own
+     * `onDragStop` (`previousDraggingItemOffset.snapTo(startOffset); previousDraggingItemOffset
+     * .animateTo(Offset.Zero, spring(...))`) — [ReorderableLazySpannedGridItem] applies this offset
+     * the same way it applies [draggingItemOffsetOrZero] while actively dragging, just for
+     * whichever key currently matches [previousDraggingItemKey] instead.
+     */
+    internal fun endTrackingDrag() {
+        val releasedKey = draggingItemInfo?.key
+        val releasedOffset = draggingItemOffsetOrZero
+        dropTargetSelector.endTrackingDrag()
+        if (releasedKey != null) {
+            previousDraggingItemKey = releasedKey
+            scope.launch {
+                previousDraggingItemOffset.snapTo(releasedOffset)
+                previousDraggingItemOffset.animateTo(
+                    Offset.Zero,
+                    spring(
+                        stiffness = Spring.StiffnessMediumLow,
+                        visibilityThreshold = Offset.VisibilityThreshold,
+                    ),
+                )
+                previousDraggingItemKey = null
+            }
+        }
+    }
+
+    var previousDraggingItemKey: Any? by mutableStateOf(null)
+        private set
+    val previousDraggingItemOffset = Animatable(Offset.Zero, Offset.VectorConverter)
 
     /** Fed by the parallel pointer observer in [TrackingReorderableCollectionItemScope]. */
     internal fun accumulateRawDragDelta(delta: Offset) = dropTargetSelector.accumulateRawDelta(delta)
@@ -486,13 +524,11 @@ private suspend fun PointerInputScope.observeRawDragDelta(onDelta: (Offset) -> U
 fun LazySpannedGridItemScope.ReorderableLazySpannedGridItem(
     state: ReorderableLazySpannedGridState,
     key: Any,
-    item: LazySpannedGridItemInfo,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     animateItemModifier: Modifier = Modifier.animateItem(),
     content: @Composable ReorderableCollectionItemScope.(isDragging: Boolean) -> Unit,
 ) {
-    android.util.Log.d("REORDER_DEBUG", "ReorderableLazySpannedGridItem RECOMPOSE key=$key item.offset=${item.offset}")
     val dragging by state.isItemDraggingState(key)
     val offsetModifier = if (dragging) {
         // Read inside the graphicsLayer block, like the real ReorderableItem does with its own
@@ -506,10 +542,18 @@ fun LazySpannedGridItemScope.ReorderableLazySpannedGridItem(
                 translationX = offset.x
                 translationY = offset.y
             }
+    } else if (key == state.previousDraggingItemKey) {
+        // See ReorderableLazySpannedGridState.endTrackingDrag — springs the exact release-time
+        // offset back to zero instead of jumping straight to animateItemModifier's placement,
+        // mirroring the base class's own previousDraggingItemKey/previousDraggingItemOffset.
+        Modifier
+            .zIndex(1f)
+            .graphicsLayer {
+                val offset = state.previousDraggingItemOffset.value
+                translationX = offset.x
+                translationY = offset.y
+            }
     } else {
-        // No substitute for previousDraggingItemKey/previousDraggingItemOffset (see the file-level
-        // comment) — an item that just stopped being dragged falls straight back to its ordinary
-        // placement spring instead of animating from its exact release position.
         animateItemModifier
     }
 
@@ -520,10 +564,7 @@ fun LazySpannedGridItemScope.ReorderableLazySpannedGridItem(
         enabled = enabled,
         dragging = dragging,
     ) { isDragging ->
-        val trackingScope = remember(this, item) {
-            android.util.Log.d("REORDER_DEBUG", "new TrackingReorderableCollectionItemScope key=$key item.offset=${item.offset}")
-            TrackingReorderableCollectionItemScope(this, state, item)
-        }
+        val trackingScope = remember(this, key) { TrackingReorderableCollectionItemScope(this, state, key) }
         trackingScope.content(isDragging)
     }
 }
@@ -538,8 +579,25 @@ fun LazySpannedGridItemScope.ReorderableLazySpannedGridItem(
 private class TrackingReorderableCollectionItemScope(
     private val delegate: ReorderableCollectionItemScope,
     private val state: ReorderableLazySpannedGridState,
-    private val item: LazySpannedGridItemInfo,
+    private val key: Any,
 ) : ReorderableCollectionItemScope {
+    // The delegate's own draggableHandle()/longPressDraggableHandle() key their underlying
+    // pointerInput on `reorderableLazyCollectionState` (a single instance stable for the whole
+    // grid's lifetime, see sh.calvin.reorderable's own ReorderableCollectionItemScopeImpl) — so
+    // once that coroutine launches for a given item, it never restarts, and the onDragStarted
+    // closure passed to detectDragGesturesAfterLongPress/detectDragGestures is captured exactly
+    // once, from whichever TrackingReorderableCollectionItemScope existed at that moment. Reading
+    // the constructor's own `item` field inside that closure therefore keeps returning THAT one
+    // scope's original `item` value forever — correct for the very first drag (nothing had moved
+    // yet), permanently stale for every drag after: confirmed on-device (2026-08-29) via a
+    // beginTrackingDrag log showing `passedOffset` frozen at the item's pre-first-drag position
+    // while a fresh lookup logged in the same line (`liveOffset`) correctly tracked every
+    // subsequent settle. `item.key` itself is stable and never goes stale, so re-resolving the
+    // live item by key right when a drag actually starts fixes the anchor without needing the
+    // delegate's own pointerInput to restart at all.
+    private fun resolveCurrentItem(): LazySpannedGridItemInfo =
+        state.gridState.layoutInfo.visibleItemsInfo.first { it.key == key }
+
     override fun Modifier.draggableHandle(
         enabled: Boolean,
         interactionSource: MutableInteractionSource?,
@@ -548,12 +606,12 @@ private class TrackingReorderableCollectionItemScope(
         dragGestureDetector: DragGestureDetector,
     ): Modifier = with(delegate) {
         this@draggableHandle
-            .pointerInput(item.key) { observeRawDragDelta { delta -> state.accumulateRawDragDelta(delta) } }
+            .pointerInput(key) { observeRawDragDelta { delta -> state.accumulateRawDragDelta(delta) } }
             .draggableHandle(
                 enabled = enabled,
                 interactionSource = interactionSource,
                 onDragStarted = { position ->
-                    state.beginTrackingDrag(item)
+                    state.beginTrackingDrag(resolveCurrentItem())
                     onDragStarted(position)
                 },
                 onDragStopped = {
@@ -571,12 +629,12 @@ private class TrackingReorderableCollectionItemScope(
         onDragStopped: () -> Unit,
     ): Modifier = with(delegate) {
         this@longPressDraggableHandle
-            .pointerInput(item.key) { observeRawDragDelta { delta -> state.accumulateRawDragDelta(delta) } }
+            .pointerInput(key) { observeRawDragDelta { delta -> state.accumulateRawDragDelta(delta) } }
             .longPressDraggableHandle(
                 enabled = enabled,
                 interactionSource = interactionSource,
                 onDragStarted = { position ->
-                    state.beginTrackingDrag(item)
+                    state.beginTrackingDrag(resolveCurrentItem())
                     onDragStarted(position)
                 },
                 onDragStopped = {

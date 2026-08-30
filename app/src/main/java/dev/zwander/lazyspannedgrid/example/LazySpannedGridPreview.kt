@@ -185,29 +185,20 @@ internal fun LazySpannedGridMixedSpansCalvinPreview() {
             verticalItemSpacing = 8.dp,
         ) {
             items(spans.size, span = { spans[it].span }, key = { spans[it].title }) { index ->
-                val itemInfo = reorderableState.gridState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == index }
-                if (itemInfo == null) {
-                    // First frame after this item enters composition, before the grid's own
-                    // layoutInfo has caught up to include it (see the preview's own comment) —
-                    // render plain content for this one frame; it wraps correctly on the next.
-                    PreviewSpannedGridItem(spans[index].title, Modifier.fillMaxSize())
-                } else {
-                    ReorderableLazySpannedGridItem(
-                        state = reorderableState,
-                        key = spans[index].title,
-                        item = itemInfo,
-                        modifier = Modifier.fillMaxSize(),
-                    ) { isDragging ->
-                        val elevation by animateDpAsState(if (isDragging) 16.dp else 0.dp)
-                        val scale by animateFloatAsState(if (isDragging) 1.08f else 1f)
-                        PreviewSpannedGridItem(
-                            spans[index].title,
-                            Modifier.fillMaxSize()
-                                .longPressDraggableHandle()
-                                .scale(scale)
-                                .shadow(elevation),
-                        )
-                    }
+                ReorderableLazySpannedGridItem(
+                    state = reorderableState,
+                    key = spans[index].title,
+                    modifier = Modifier.fillMaxSize(),
+                ) { isDragging ->
+                    val elevation by animateDpAsState(if (isDragging) 16.dp else 0.dp)
+                    val scale by animateFloatAsState(if (isDragging) 1.08f else 1f)
+                    PreviewSpannedGridItem(
+                        spans[index].title,
+                        Modifier.fillMaxSize()
+                            .longPressDraggableHandle()
+                            .scale(scale)
+                            .shadow(elevation),
+                    )
                 }
             }
         }
