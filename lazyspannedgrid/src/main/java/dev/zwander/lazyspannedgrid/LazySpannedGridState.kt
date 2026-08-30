@@ -3,6 +3,7 @@
 package dev.zwander.lazyspannedgrid
 
 import androidx.compose.foundation.MutatePriority
+import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.ScrollScope
 import androidx.compose.foundation.gestures.ScrollableState
 import androidx.compose.foundation.gestures.animateScrollBy
@@ -173,6 +174,21 @@ class LazySpannedGridState(
             } else {
                 (scrollOffsetPx - firstVisibleLine * linePitchPx).roundToInt()
             }
+
+    /**
+     * Index (by original list order, not line) of the first item at least partially visible,
+     * mirroring `LazyListState.firstVisibleItemIndex`/`LazyGridState.firstVisibleItemIndex`. A
+     * given line can hold several items when spans are involved, so this is derived from
+     * [layoutInfo]'s own visible-item list rather than from [firstVisibleLine] directly.
+     */
+    val firstVisibleItemIndex: Int
+        get() = layoutInfo.visibleItemsInfo.firstOrNull()?.index ?: 0
+
+    /** Scroll offset, in pixels, of [firstVisibleItemIndex] relative to the start of the viewport along the main axis. */
+    val firstVisibleItemScrollOffset: Int
+        get() = layoutInfo.visibleItemsInfo.firstOrNull()?.offset?.let {
+            if (layoutInfo.orientation == Orientation.Vertical) it.y else it.x
+        } ?: 0
 
     val currentScrollOffsetPx: Float
         get() = scrollOffsetPx
