@@ -21,6 +21,8 @@ import dev.zwander.lazyspannedgrid.SpannedGridItemSpan
 import dev.zwander.lazyspannedgrid.example.ui.theme.LazySpannedGridTheme
 import dev.zwander.lazyspannedgrid.items
 import dev.zwander.lazyspannedgrid.reorderable.rememberReorderableLazySpannedGridState
+import dev.zwander.lazyspannedgrid.reorderable_calvin.ReorderableLazySpannedGridItem
+import dev.zwander.lazyspannedgrid.reorderable_calvin.rememberReorderableLazySpannedGridState as rememberReorderableLazySpannedGridStateCalvin
 import org.burnoutcrew.reorderable.ReorderableItem
 import org.burnoutcrew.reorderable.detectReorderAfterLongPress
 import org.burnoutcrew.reorderable.reorderable
@@ -137,6 +139,75 @@ private fun LazySpannedGridMixedSpansPreview() {
                             .scale(scale)
                             .shadow(elevation),
                     )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Calvin-reorderable counterpart of [LazySpannedGridMixedSpansPreview] — same mixed-span setup,
+ * but driven by the `sh.calvin.reorderable`-based module instead of org.burnoutcrew.reorderable.
+ * Run in Interactive Preview to exercise drag-reorder end to end (see that module's own file-level
+ * comment for the internal-API ceiling this port ran into and how it's worked around).
+ */
+@Preview(widthDp = 320, heightDp = 320)
+@Composable
+internal fun LazySpannedGridMixedSpansCalvinPreview() {
+    var spans by remember {
+        mutableStateOf(
+            List(15) {
+                SpanItem(
+                    title = "Item #$it",
+                    span = SpannedGridItemSpan(
+                        columnSpan = Random.nextInt(1, 3),
+                        rowSpan = Random.nextInt(1, 3),
+                    ),
+                )
+            }
+        )
+    }
+    LazySpannedGridTheme {
+        val reorderableState = rememberReorderableLazySpannedGridStateCalvin(
+            onMove = { from, to ->
+                spans = spans.toMutableList().apply {
+                    add(to.index, removeAt(from.index))
+                }
+            },
+        )
+
+        LazyVerticalSpannedGrid(
+            state = reorderableState.gridState,
+            columnCount = 6,
+            rowCount = 4,
+            modifier = Modifier.fillMaxSize(),
+            horizontalItemSpacing = 8.dp,
+            verticalItemSpacing = 8.dp,
+        ) {
+            items(spans.size, span = { spans[it].span }, key = { spans[it].title }) { index ->
+                val itemInfo = reorderableState.gridState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == index }
+                if (itemInfo == null) {
+                    // First frame after this item enters composition, before the grid's own
+                    // layoutInfo has caught up to include it (see the preview's own comment) —
+                    // render plain content for this one frame; it wraps correctly on the next.
+                    PreviewSpannedGridItem(spans[index].title, Modifier.fillMaxSize())
+                } else {
+                    ReorderableLazySpannedGridItem(
+                        state = reorderableState,
+                        key = spans[index].title,
+                        item = itemInfo,
+                        modifier = Modifier.fillMaxSize(),
+                    ) { isDragging ->
+                        val elevation by animateDpAsState(if (isDragging) 16.dp else 0.dp)
+                        val scale by animateFloatAsState(if (isDragging) 1.08f else 1f)
+                        PreviewSpannedGridItem(
+                            spans[index].title,
+                            Modifier.fillMaxSize()
+                                .longPressDraggableHandle()
+                                .scale(scale)
+                                .shadow(elevation),
+                        )
+                    }
                 }
             }
         }

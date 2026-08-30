@@ -23,3 +23,4 @@ rootProject.name = "LazySpannedGrid"
 include(":app")
 include(":lazyspannedgrid")
 include(":lazyspannedgrid-reorderable")
+include(":lazyspannedgrid-reorderable-calvin")

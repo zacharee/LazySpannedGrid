@@ -48,8 +48,10 @@ dependencies {
 
     implementation(project(":lazyspannedgrid"))
     implementation(project(":lazyspannedgrid-reorderable"))
+    implementation(project(":lazyspannedgrid-reorderable-calvin"))
 
     implementation(libs.composereorderable)
+    implementation(libs.reorderable)
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

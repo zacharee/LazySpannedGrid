@@ -5,11 +5,9 @@ plugins {
 }
 
 android {
-    namespace = "dev.zwander.lazyspannedgrid.reorderable"
+    namespace = "dev.zwander.lazyspannedgrid.reorderable_calvin"
     compileSdk {
-        version = release(37) {
-            minorApiLevel = 0
-        }
+        version = release(37)
     }
 
     defaultConfig {
@@ -37,7 +35,7 @@ mavenPublishing {
         description = "Add-on for LazySpannedGrid to support Compose Reorderable library"
     }
 
-    coordinates(artifactId = "lazyspannedgrid-reorderable")
+    coordinates(artifactId = "lazyspannedgrid-reorderable-calvin")
 }
 
 dependencies {
@@ -52,7 +50,7 @@ dependencies {
     implementation(libs.compose.foundation)
     implementation(libs.compose.foundation.layout)
 
-    implementation(libs.composereorderable)
+    implementation(libs.reorderable)
 
     implementation(project(":lazyspannedgrid"))
 }

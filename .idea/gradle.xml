@@ -12,6 +12,7 @@
             <option value="$PROJECT_DIR$/app" />
             <option value="$PROJECT_DIR$/lazyspannedgrid" />
             <option value="$PROJECT_DIR$/lazyspannedgrid-reorderable" />
+            <option value="$PROJECT_DIR$/lazyspannedgrid-reorderable-calvin" />
           </set>
         </option>
       </GradleProjectSettings>
